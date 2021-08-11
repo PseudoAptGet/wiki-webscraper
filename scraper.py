@@ -33,7 +33,7 @@ placeForTitleCount = soup.find(class_="mw-parser-output").findChild()
 #Find how many headings there are to store information in an array
 numHeadings = 1
 while True:
-    if placeForTitleCount.text == "See also[edit]":
+    if placeForTitleCount.text == "See also[edit]" or placeForTitleCount.text == "See_also":
         break
     elif placeForTitleCount.name == "h2" or placeForTitleCount.name == "h3" or placeForTitleCount.name == "h4":
         placeForTitleCount = placeForTitleCount.find_next_sibling()
@@ -52,7 +52,7 @@ curIndex = 0
 booleanRun = True
 Matrix[0][0] = title.contents[0]
 while booleanRun == True:
-    if place.text == "See also[edit]": #Useless content beyond this point. Thus, break statement included
+    if place.text == "See also[edit]" or place.text == "See_also": #Useless content beyond this point. Thus, break statement included
         break
     elif place.name == "h2" or place.name == "h3" or place.name == "h4": #Heading -> Store in matrix
         curIndex += 1
@@ -92,6 +92,3 @@ for whichHeading in range(height):
 for hrefEmbeds in soup.findAll('a'):
     print(hrefEmbeds.get('href'))
 '''  
-
-
-
