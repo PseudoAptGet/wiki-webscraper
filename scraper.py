@@ -11,9 +11,12 @@ def removeSuffix(input_string, suffix):
         return input_string[:-len(suffix)]
     return input_string
 
+#get user link
+link = input("please enter the wikipedia link: ")
+
 #setting up request
 getter = requests.get(
-	url="https://en.wikipedia.org/wiki/Latin",
+	url=link,
 )
 if(getter.status_code != 200):
 	print("REQUEST FAILED. PLEASE CHECK INTERNET CONNECTION")
