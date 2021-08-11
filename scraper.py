@@ -32,8 +32,10 @@ placeForTitleCount = soup.find(class_="mw-parser-output").findChild()
 
 #Find how many headings there are to store information in an array
 numHeadings = 1
-while True:
+booleanTrue = True
+while booleanTrue == True:
     if placeForTitleCount.text == "See also[edit]" or placeForTitleCount.text == "See_also":
+        booleanTrue = False
         break
     elif placeForTitleCount.name == "h2" or placeForTitleCount.name == "h3" or placeForTitleCount.name == "h4":
         placeForTitleCount = placeForTitleCount.find_next_sibling()
@@ -52,7 +54,7 @@ curIndex = 0
 booleanRun = True
 Matrix[0][0] = title.contents[0]
 while booleanRun == True:
-    if place.text == "See also[edit]" or place.text == "See_also": #Useless content beyond this point. Thus, break statement included
+    if place.text== "See also[edit]" or place.id == "See_also": #Useless content beyond this point. Thus, break statement included
         break
     elif place.name == "h2" or place.name == "h3" or place.name == "h4": #Heading -> Store in matrix
         curIndex += 1
@@ -71,21 +73,19 @@ for whichHeading in range(height):
     for contentType in range(width):
         Matrix[whichHeading][contentType].lstrip("text: ")
         if contentType == 0:
-            #file1.write(Matrix[whichHeading][contentType])
             print(Matrix[whichHeading][contentType])
         elif contentType == 2:
             print("LINKS: Sorry, I had some trouble extracting links. I'll try to work that out before the interview (if given the opportunity).")
             print("\n")
             print("\n")
         else:
-            #print("\n")
             curText = Matrix[whichHeading][contentType]
             noStopText = remove_stopwords(curText)
             listFirstText = noStopText.split()
             newCounter = Counter(listFirstText)
             mostFreq = newCounter.most_common(10)
             print(mostFreq)
-            #print(Matrix[whichHeading][contentType])
+            
 
 #Could not locate href links in relevant areas (ie put it in the corrent part of the matrix). Uncomment this area to see the links.
 '''
