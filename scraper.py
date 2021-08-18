@@ -3,153 +3,234 @@ from bs4 import BeautifulSoup, NavigableString, Tag #to parse and navigate throu
 from collections import Counter #for frequency counter
 from gensim.parsing.preprocessing import remove_stopwords, preprocess_string, strip_punctuation #to remmove stopwords
 import re #regex support 
-import os #file existence checking support
 
 
-#method to remove suffix for string manipulation
+def get_input():
+    '''
+    Gets the user's intended wikipedia page/input
+
+    No Args
+
+    Returns:
+        A string representation of the wikipedia link
+    '''
+    print("Please enter a wikipedia link that you would like this script to scrape")
+    print("If you're feeling uninspired, I've linked some cool articles down below")
+    print("The place my family revisits every year: https://en.wikipedia.org/wiki/Niagara_Falls")
+    print("plants? : https://en.wikipedia.org/wiki/Agriculture")
+    print("The wikipedia page I may or may not have read before writing this script: https://en.wikipedia.org/wiki/Python_(programming_language)")
+    chosen_page = input("Choose one, and enter one here:")
+    return chosen_page
+
+def file_setup():
+    '''
+    Sets up the file where output/scraping results will be displayed
+
+    No Args
+
+    Returns the file to be written in 
+    '''
+    f = open("output.txt", 'w')
+    return f
+
+def create_soup_object(wiki_link):
+    '''
+    Creates a beautifulsoup object that will scrape wikipedia
+
+    Args:
+        wiki_link (string): a string representation of the wiki link to be scraped
+    
+    Returns:
+        soup: The BeautifulSoup object representation of the link
+    '''    
+    getter = requests.get(url=wiki_link,)
+    if(getter.status_code != 200):
+        print("REQUEST FAILED. PLEASE CHECK IF LINK IS VALID. SCRIPT TERMINATED")
+        exit() #exit program if getter failed to prevent later runtime exceptions from beautifulsoup import
+    soup = BeautifulSoup(getter.content, 'html.parser')
+    return soup
+
+def get_number_of_headings(soup_object):
+    '''
+    Fetches the number of (content) headings that a given wikipedia page has 
+    
+    Args:
+        soup_object: the soup object of the wikipedia page
+
+    Returns: 
+        number_of_headings (int): Number of headings containing relevant information
+    '''
+    reference_point = soup_object.find(class_="mw-parser-output").findChild() #chose this point because displayed wiki text starts from here
+    count = 1 #already 1 because title exists, and is ignored from chosen point since chosen point is past title
+    while True:
+        # stopping if program sees these sections because they have no relevant textual information to scrape
+        # after all, why would one scrape word frequency of links?
+        if reference_point.text == "See also[edit]":
+            break
+        elif reference_point.text == "See also":
+            break
+        elif reference_point.text == "References":
+            break
+        elif reference_point.text == "References[edit]":
+            break
+        # if reference point is a heading, then the count is incremented because another section exists
+        elif reference_point.name == "h2" or reference_point.name == "h3" or reference_point.name == "h4":
+            reference_point = reference_point.find_next_sibling()
+            count += 1
+        else:
+            reference_point = reference_point.find_next_sibling() #must be useless -> skip
+    return count
+        
+def create_matrix(number_of_headings):
+    '''
+    Creates a 2d array/matrix where scraped data will be temporarily stored.
+    column 0: heading titles
+    column 1: scraped text
+    column 2: wikipedia redirect links
+    column 3: outside references
+
+    Args:
+        number_of_headings (int): The number of headings
+    
+    Returns: 
+        Matrix/2d array: The aforementioned array for data storage
+    '''
+    height, width = number_of_headings, 4
+    matrix = [ [ "" for i in range(width) ] for j in range(height) ]
+    return matrix
+
+
 def removeSuffix(input_string, suffix):
+    '''
+    removes a specified suffix from a given string
+
+    Args: 
+        input_string: the string that a suffix must be removed from
+        suffix: the suffix that must be removed
+    
+    Returns:
+        input_string: the updated input string that does not have specified suffix
+    '''
     if suffix and input_string.endswith(suffix):
         return input_string[:-len(suffix)]
     return input_string
 
-f = open("final_demo.txt", "w")
-f2 = open("linkWork.txt", 'w')
+def fill_matrix(matrix, number_of_headings, soup_object):
+    '''
+    Fills in the matrix with relevant information of scraped data in the relevant columns
+    Do note that the rows correspond to individual sections.
+    Column 0 of each row : title
+    Column 1 of each row : scraped text 
+    Column 2 of each row : wiki redirects
+    Column 3 of each row : referenced links (typically outside wikipedia)
 
-#get user link
-link = input("please enter the wikipedia link: ")
+    Args:
+        Matrix: The matrix where data will be stored
+        number_of_headings: Number of headings in wikipedia page
+        soup_object: Beautiful Soup object of the wikipedia page
 
-#setting up request
-getter = requests.get(url=link,)
-if(getter.status_code != 200):
-    exit()
+    No Returns: merely updates official matrix, which is a list (mutable)
+    '''
+    matrix[0][0] = soup_object.find(id="firstHeading").contents[0] #inputs column 0's first entry with wiki page title
+    place = soup_object.find(class_="mw-parser-output").findChild() #point from which main page html is stored
+    cur_index = 0
+    while True:
+        # stopping if program sees these sections because they have no relevant textual information to scrape
+        # after all, why would one scrape word frequency of links?
+        if place.text == "See also[edit]": 
+            break
+        elif place.text == "See also":
+            break
+        elif place.text == "References":
+            break
+        elif place.text == "References[edit]":
+            break
+        elif place.name == "h2" or place.name == "h3" or place.name == "h4": #Heading -> Store in matrix
+            cur_index += 1  #onto a new row since new title/heading has been found
+            cur_title = place.text.strip() 
+            matrix[cur_index][0] = removeSuffix(cur_title, "[edit]") #input title into matrix, but get rid of edit suffix because it's useless
+            place = place.find_next_sibling()
+        else: #by process of elimination, must be actual text. Store in matrix
+            matrix[cur_index][1] += place.text
+            for link in place.find_all('a'): #find all html links
+                url = link.get('href')
+                strUrl = str(url)
+                if(strUrl.startswith("/wiki/")): #if wiki, store in column 2 because it's localized
+                    matrix[cur_index][2] += (" " + strUrl)
+                if(strUrl.startswith("#cite_note")): 
+                #if in references/citations, then store in column 3 because it's not localized and actual link must be fetched from references section
+                    matrix[cur_index][3] += (" " + strUrl)   
+            place = place.find_next_sibling()
 
-#soup = parsing object
-soup = BeautifulSoup(getter.content, 'html.parser')
+def output_matrix_into_file(matrix, file_object, num_headings, soup):
+    '''
+    Outputs matrix info into file_object
 
-#extracting and printing the title of the soup
-title = soup.find(id="firstHeading")
+    Args:
+        matrix: The matrix where (scraped) data is stored
+        file_object: The file where information will be written
+        num_headings: Number of headings in wikipedia page
+        soup: Beautiful Soup object of the wikipedia page
 
-#Point from where all sibling nodes will be wikipedia content
-placeForTitleCount = soup.find(class_="mw-parser-output").findChild()
+    No Returns: merely updates official matrix, which is a list (mutable)
+    '''
+    #iterate through each row's columns
+    for each_heading in range(num_headings):
+        for each_matrix_info_type in range(0,4): 
+            if each_matrix_info_type == 0: #title/headings
+                file_object.write("title: " + matrix[each_heading][each_matrix_info_type])
+                file_object.write('\n')
+            elif each_matrix_info_type == 1: #scraped text
+                current_text = matrix[each_heading][each_matrix_info_type]
+                #basic scraping. Punctuation, stop words, and additional stop words not in gensim library removed
+                current_text = remove_stopwords(strip_punctuation(current_text.lower()))
+                pattern = r'[0-9]'
+                current_text = re.sub(pattern, '', current_text)
+                current_text = current_text.replace("the", "")
+                current_text = current_text.replace("•", "")
+                #split text into list
+                current_textArray = current_text.split()
+                #count the frequencyy of words
+                word_arraylist = Counter(current_textArray)
+                most_frequent_words = word_arraylist.most_common(5)
+                file_object.write("scraped text: " + str(most_frequent_words))
+                file_object.write('\n')
+            elif each_matrix_info_type == 2: #local wiki links
+                each_local_link_as_str = matrix[each_heading][each_matrix_info_type]
+                each_local_link_as_list = each_local_link_as_str.split()
+                file_object.write("wiki links: " + str(each_local_link_as_list))
+                file_object.write('\n')
+            else: #outside links
+                each_local_link_as_str = matrix[each_heading][each_matrix_info_type]
+                each_local_link_as_list = each_local_link_as_str.split()
+                # all outside links are in the format #cite-note-(insert number or title) for class
+                # removing the # so that link can be searched by class
+                for i in range(0, len(each_local_link_as_list)):
+                    each_local_link_as_list[i] = each_local_link_as_list[i].removeprefix("#")
+                soup_reference_section_location = soup.find(class_="references") # search in reference section
+                outside_links_array = [] # will contain all outside links (not the cite-notes that the matrix contains)
+                for each_cite_note in each_local_link_as_list:
+                    li_cite_note_finder = soup_reference_section_location.find(id = each_cite_note) #find the li that contains the cite note
+                    outside_link = li_cite_note_finder.find(class_ = "reference-text") #point in html where links are contained 
+                    #scrape all links
+                    for link in outside_link.find_all('a'):
+                        url = link.get("href")
+                        url_as_string = str(url)
+                        outside_links_array.append(url_as_string)
+                file_object.write("outside links: " + str(outside_links_array))
+                file_object.write('\n\n')
+                file_object.write('\n')
 
+def main():
+    link = get_input()
+    output_file = file_setup()
+    main_soup = create_soup_object(link)
+    num_headings = get_number_of_headings(main_soup)
+    official_matrix = create_matrix(num_headings)
+    fill_matrix(official_matrix, num_headings, main_soup)
+    output_matrix_into_file(official_matrix, output_file, num_headings, main_soup)
+    print("All done. If you're still getting errors, apologies on my part. Wikipedia is hard to scrape, and their class naming convention is irregular")
+    print("Please start this script again and try some of the links I recommended. They seem to work just fine")
+    
 
-#Find how many headings there are to store information in an array
-numHeadings = 1
-while True:
-    #first four conditions of if/elif -> see also and references don't contain 
-    #important textual information, and pop up at the end of the article, 
-    #so if that's reached, then there are no more headings containing important 
-    # info
-    if placeForTitleCount.text == "See also[edit]":
-        booleanTrue = False
-        break
-    elif placeForTitleCount.text == "See also":
-        booleanTrue = False
-        break
-    elif placeForTitleCount.text == "References":
-        break
-    elif placeForTitleCount.text == "References[edit]":
-        break
-    #if it's a header under mw-parser-output, and it does not 
-    #contain bibliographical information, then it must contain the textual
-    #information that must be scraped
-    elif placeForTitleCount.name == "h2" or placeForTitleCount.name == "h3" or placeForTitleCount.name == "h4":
-        placeForTitleCount = placeForTitleCount.find_next_sibling()
-        numHeadings += 1
-    else:
-        placeForTitleCount = placeForTitleCount.find_next_sibling()
-
-
-#official matrix to store all info
-#rows correspond to headings
-#columns in the rows correspond to content 
-#(0 = heading, 1 = text, 2 = local wiki links, 3 = outside references)
-height, width = numHeadings, 4
-Matrix = [ [ "" for i in range(width) ] for j in range(height) ]
-Matrix[0][0] = title.contents[0] #input wiki page title into first row (for first heading) of matrix
-
-
-#Input scraped data into matrix
-place = soup.find(class_="mw-parser-output").findChild() #point where wiki content starts
-curIndex = 0 #used to keep track of which heading the content and links are in
-while True:
-    #first four if elif -> must break because outside range of text info to scrape
-    if place.text == "See also[edit]": 
-        break
-    elif place.text == "See also":
-        break
-    elif place.text == "References":
-        break
-    elif place.text == "References[edit]":
-        break
-    #if it's a header, then curIndex must be bumped because all text from 
-    #existing header has been scraped. Incrementing curIndex moves the 
-    #input location of the matrix to the next row, corresponding to the next header
-    elif place.name == "h2" or place.name == "h3" or place.name == "h4": #Heading -> Store in matrix
-        curIndex += 1  
-        curTitle = place.text.strip()
-        Matrix[curIndex][0] = removeSuffix(curTitle, "[edit]")
-        place = place.find_next_sibling()
-    else: #by process of elimination, must be actual text. Store in matrix
-        Matrix[curIndex][1] += place.text #put text in column 1 
-        for link in place.find_all('a'): #search for all links
-            url = link.get('href')
-            strUrl = str(url)
-            if(strUrl.startswith("/wiki/")): #local links -> column 2 
-                Matrix[curIndex][2] += (" " + strUrl)
-            if(strUrl.startswith("#cite_note")): #non-local links -> column 3 
-                Matrix[curIndex][3] += (" " + strUrl)
-        place = place.find_next_sibling()
-
-#write matrix into final_demo
-#start off with basic iteration. Pick row, then go column by column within row
-for whichHeading in range(height):
-    for contentType in range(width):
-        if contentType == 0: #title/headings
-            f.write("title: " + Matrix[whichHeading][contentType])
-            f.write('\n')
-        elif contentType == 1: #content
-            curText = Matrix[whichHeading][contentType]
-            curText1 = curText.lower()
-            noPuncText = strip_punctuation(curText1)
-            noStopText = remove_stopwords(noPuncText)
-            pattern = r'[0-9]'
-            noDigText = re.sub(pattern, '', noStopText)
-            noCommonText1 = noDigText.replace("the", "")
-            noCommonText2 = noCommonText1.replace("The", "")
-            noCommonText3 = noCommonText2.replace("•", "")
-            #print(noStopText)
-            listFirstText = noCommonText3.split()
-            newCounter = Counter(listFirstText)
-            mostFreq = newCounter.most_common(5)
-            f.write("scraped text: " + str(mostFreq))
-            f.write('\n')
-            #print(mostFreq)
-        elif contentType == 2: #local wiki links
-            listLinks = Matrix[whichHeading][contentType]
-            indivTokens = listLinks.split()
-            f.write("wiki links: " + str(indivTokens))
-            f.write('\n')
-        else: #outside links
-            listLinks = Matrix[whichHeading][contentType]
-            indivTokens = listLinks.split()
-            for i in range(0, len(indivTokens)):
-                indivTokens[i] = indivTokens[i].removeprefix("#")
-            referenceSoup = soup.find(class_="references")
-            officialArray = []
-            for eachLink in indivTokens:
-                firstSoup = referenceSoup.find(id = eachLink)
-                secondSoup = firstSoup.find(class_ = "reference-text") #changed from "reference-text" 
-                for link in secondSoup.find_all('a'):
-                    url = link.get("href")
-                    strUrl = str(url)
-                    officialArray.append(strUrl)
-            
-            f.write("outside links: " + str(officialArray))
-            f.write('\n')
-            f.write('\n')
-            
-
-
-
-
+main()
